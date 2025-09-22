@@ -13,7 +13,7 @@ config({ path: '../../.env' });
 const { PERSONAL_ACCESS_TOKEN, WORKSPACE_ID } = process.env;
 
 // Directory name for saved screens
-const dir = 'Output';
+const dir = 'Output2';
 
 // Zeplin API rate limit is 200 requests per user per minute.
 // Use rateLimit to extend Axios to only make 200 requests per minute (60,000ms)
@@ -69,12 +69,35 @@ const getProjectScreens = async (project) => {
 
 const nicefyPath = (path) => path.trim().replaceAll(" ", "_").replaceAll("/", "-");
 
-const downloadScreen = async (screen, progress) => {
-  const { name, image: { originalUrl }, projectName } = screen;
-  const { data } = await axios.get(originalUrl, { responseType: 'stream' });
+const downloadScreen = async (project, screen, progress) => {
+  console.log(project.id, screen.id);
+  const { name, image: { originalUrl }, numberOfVersions, projectName } = screen;
 
-  await fs.mkdir(`${dir}/${nicefyPath(projectName)}`, { recursive: true });
-  await fs.writeFile(`${dir}/${nicefyPath(projectName)}/${nicefyPath(name)}.png`, data);
+  var downloadSuccess = false;
+
+  if (numberOfVersions > 1 && screen.id) {
+    try {
+      const screenVersions = await zeplin.screens.getScreenVersions(project.id, screen.id);
+      console.log(JSON.stringify(screenVersions));
+      for (screenVersion in screenVersions) {
+        const { imageUrl, created } = screenVersion;
+        const { data } = await axios.get(imageUrl, { responseType: 'stream' });
+
+        await fs.mkdir(`${dir}/${nicefyPath(projectName)}`, { recursive: true });
+        await fs.writeFile(`${dir}/${nicefyPath(projectName)}/${nicefyPath(name)}_${created}.png`, data);
+
+        downloadSuccess = true;
+      }
+    } catch (e) {
+      console.log(e);
+    }
+  } 
+  if (!downloadSuccess) {
+    const { data } = await axios.get(originalUrl, { responseType: 'stream' });
+
+    await fs.mkdir(`${dir}/${nicefyPath(projectName)}`, { recursive: true });
+    await fs.writeFile(`${dir}/${nicefyPath(projectName)}/${nicefyPath(name)}`, data);
+  }
 
   progress.tick();
 };
@@ -84,9 +107,13 @@ const main = async () => {
 
   console.log(`There are ${projects.length} projects`);
 
-  const screens = (await Promise.all(projects.map(
-    async (project) => getProjectScreens(project),
-  ))).flat();
+  const projectScreens = (await Promise.all(projects.map(
+    async (project) => { return { project: project, screens: await getProjectScreens(project) }; }
+  )));
+
+  console.log(JSON.stringify(projectScreens));
+
+  const screens = projectScreens.map( ps => ps.screens ).flat();
   console.log(`There are ${screens.length} screens`);
 
   const screensBar = new Progress('  Fetching screens [:bar] :rate/bps :percent :etas', {
@@ -101,7 +128,7 @@ const main = async () => {
   await fs.mkdir(dir);
 
   const limit = pLimit(20);
-  const downloadScreens = screens.map((screen) => limit(() => downloadScreen(screen, screensBar)));
+  const downloadScreens = projectScreens.map((pscreen) => pscreen.screens.map((screen) => limit(() => downloadScreen(pscreen.project, screen, screensBar))));
 
   await Promise.all(downloadScreens);
 };
