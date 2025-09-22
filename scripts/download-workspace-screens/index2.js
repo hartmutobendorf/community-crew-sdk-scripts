@@ -70,7 +70,6 @@ const getProjectScreens = async (project) => {
 const nicefyPath = (path) => path.trim().replaceAll(" ", "_").replaceAll("/", "-");
 
 const downloadScreen = async (project, screen, progress) => {
-  console.log(project.id, screen.id);
   const { name, image: { originalUrl }, numberOfVersions, projectName } = screen;
 
   var downloadSuccess = false;
@@ -78,7 +77,6 @@ const downloadScreen = async (project, screen, progress) => {
   if (numberOfVersions > 1 && screen.id) {
     try {
       const screenVersions = await zeplin.screens.getScreenVersions(project.id, screen.id);
-      console.log(JSON.stringify(screenVersions));
       for (screenVersion in screenVersions) {
         const { imageUrl, created } = screenVersion;
         const { data } = await axios.get(imageUrl, { responseType: 'stream' });
@@ -89,7 +87,10 @@ const downloadScreen = async (project, screen, progress) => {
         downloadSuccess = true;
       }
     } catch (e) {
-      console.log(e);
+      if (e.response.data)
+        console.log(e.response.data);
+      else
+        console.log(e);
     }
   } 
   if (!downloadSuccess) {
