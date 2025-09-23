@@ -39,7 +39,7 @@ const getAllProjects = async () => {
     // eslint-disable-next-line no-await-in-loop
     ({ data } = await zeplin.organizations.getOrganizationProjects(WORKSPACE_ID, {
       offset: i * 100,
-      limit: 20,
+      limit: 100,
     }));
     projects.push(...data);
     i += 1;
