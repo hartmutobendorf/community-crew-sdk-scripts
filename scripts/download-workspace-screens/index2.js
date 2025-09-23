@@ -69,19 +69,33 @@ const getProjectScreens = async (project) => {
 
 const nicefyPath = (path) => path.trim().replaceAll(" ", "_").replaceAll("/", "-");
 
+const checkFileExistsAsync = async (filepath) => {
+  try { 
+    await fs.access(filepath);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 const downloadScreen = async (project, screen, progress) => {
   const { name, image: { originalUrl }, numberOfVersions, projectName } = screen;
 
   if (numberOfVersions > 1 && screen.id) {
     try {
-      const limit = pLimit(20);
+      const limit = pLimit(5);
       const screenVersions = (await zeplin.screens.getScreenVersions(project.id, screen.id, {limit: 100, offset: 0})).data;
       screenVersions.map(async (screenVersion) => limit(async () => {
         const { imageUrl, created } = screenVersion;
-        const { data } = await axios.get(imageUrl, { responseType: 'stream' });
+        const dirpath = `${dir}/${nicefyPath(projectName)}`;
+        const filepath = `${dirpath}/${nicefyPath(name)}_${created}.png`;
 
-        await fs.mkdir(`${dir}/${nicefyPath(projectName)}`, { recursive: true });
-        await fs.writeFile(`${dir}/${nicefyPath(projectName)}/${nicefyPath(name)}_${created}.png`, data);
+        if (checkFileExistsAsync(filepath)) { 
+          const { data } = await axios.get(imageUrl, { responseType: 'stream' });
+
+          await fs.mkdir(dirpath, { recursive: true });
+          await fs.writeFile(filepath, data);
+        }
       }));
     } catch (e) {
       if (e?.response?.data)
@@ -91,10 +105,15 @@ const downloadScreen = async (project, screen, progress) => {
     }
   } 
 
-  const { data } = await axios.get(originalUrl, { responseType: 'stream' });
+  const dirpath = `${dir}/${nicefyPath(projectName)}`;
+  const filepath = `${dirpath}/${nicefyPath(name)}.png`;
 
-  await fs.mkdir(`${dir}/${nicefyPath(projectName)}`, { recursive: true });
-  await fs.writeFile(`${dir}/${nicefyPath(projectName)}/${nicefyPath(name)}.png`, data);
+  if (checkFileExistsAsync(filepath)) { 
+    const { data } = await axios.get(originalUrl, { responseType: 'stream' });
+
+    await fs.mkdir(dirpath, { recursive: true });
+    await fs.writeFile(filepath, data);
+  }
 
   progress.tick();
 };
@@ -122,7 +141,7 @@ const main = async () => {
   await fs.rm(dir, { recursive: true, force: true });
   await fs.mkdir(dir);
 
-  const limit = pLimit(20);
+  const limit = pLimit(5);
   const downloadScreens = projectScreens.map((pscreen) => pscreen.screens.map((screen) => limit(() => downloadScreen(pscreen.project, screen, screensBar))));
 
   await Promise.all(downloadScreens);
