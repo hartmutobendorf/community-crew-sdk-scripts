@@ -39,7 +39,7 @@ const getAllProjects = async () => {
     // eslint-disable-next-line no-await-in-loop
     ({ data } = await zeplin.organizations.getOrganizationProjects(WORKSPACE_ID, {
       offset: i * 100,
-      limit: 100,
+      limit: 20,
     }));
     projects.push(...data);
     i += 1;
@@ -72,33 +72,29 @@ const nicefyPath = (path) => path.trim().replaceAll(" ", "_").replaceAll("/", "-
 const downloadScreen = async (project, screen, progress) => {
   const { name, image: { originalUrl }, numberOfVersions, projectName } = screen;
 
-  var downloadSuccess = false;
-
   if (numberOfVersions > 1 && screen.id) {
     try {
-      const screenVersions = await zeplin.screens.getScreenVersions(project.id, screen.id);
-      for (screenVersion in screenVersions) {
+      const limit = pLimit(20);
+      const screenVersions = (await zeplin.screens.getScreenVersions(project.id, screen.id, {limit: 100, offset: 0})).data;
+      screenVersions.map(async (screenVersion) => limit(async () => {
         const { imageUrl, created } = screenVersion;
         const { data } = await axios.get(imageUrl, { responseType: 'stream' });
 
         await fs.mkdir(`${dir}/${nicefyPath(projectName)}`, { recursive: true });
         await fs.writeFile(`${dir}/${nicefyPath(projectName)}/${nicefyPath(name)}_${created}.png`, data);
-
-        downloadSuccess = true;
-      }
+      }));
     } catch (e) {
-      if (e.response.data)
+      if (e?.response?.data)
         console.log(e.response.data);
       else
         console.log(e);
     }
   } 
-  if (!downloadSuccess) {
-    const { data } = await axios.get(originalUrl, { responseType: 'stream' });
 
-    await fs.mkdir(`${dir}/${nicefyPath(projectName)}`, { recursive: true });
-    await fs.writeFile(`${dir}/${nicefyPath(projectName)}/${nicefyPath(name)}`, data);
-  }
+  const { data } = await axios.get(originalUrl, { responseType: 'stream' });
+
+  await fs.mkdir(`${dir}/${nicefyPath(projectName)}`, { recursive: true });
+  await fs.writeFile(`${dir}/${nicefyPath(projectName)}/${nicefyPath(name)}.png`, data);
 
   progress.tick();
 };
@@ -111,8 +107,6 @@ const main = async () => {
   const projectScreens = (await Promise.all(projects.map(
     async (project) => { return { project: project, screens: await getProjectScreens(project) }; }
   )));
-
-  console.log(JSON.stringify(projectScreens));
 
   const screens = projectScreens.map( ps => ps.screens ).flat();
   console.log(`There are ${screens.length} screens`);
